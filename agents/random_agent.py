@@ -6,6 +6,11 @@ from flask import Flask, request, jsonify
 from threading import Lock
 from collections import deque
 
+import sys
+from pathlib import Path
+parent_dir = Path(__file__).resolve().parent.parent
+sys.path.append(str(parent_dir))
+
 from case_closed_game import Game, Direction, GameResult
 
 # Flask API server setup
