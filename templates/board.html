@@ -1,0 +1,102 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Case Closed - Visualizer</title>
+  <style>
+    body { font-family: sans-serif; margin: 10px; }
+    canvas { background: #ffffff; border:1px solid #ddd; }
+    #info { margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <h3>Case Closed - Visual Visualizer</h3>
+  <canvas id="board" width="600" height="600"></canvas>
+  <div id="info">Turn: <span id="turn">0</span></div>
+
+<script>
+const canvas = document.getElementById('board');
+const ctx = canvas.getContext('2d');
+
+let gridW = 20;
+let gridH = 20;
+
+function draw(state) {
+  gridW = state.width;
+  gridH = state.height;
+  const cellW = canvas.width / gridW;
+  const cellH = canvas.height / gridH;
+
+  // clear
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // draw grid background
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // optional grid lines
+  ctx.strokeStyle = '#eee';
+  for (let x=0; x<=gridW; x++) {
+    ctx.beginPath();
+    ctx.moveTo(x * cellW, 0);
+    ctx.lineTo(x * cellW, canvas.height);
+    ctx.stroke();
+  }
+  for (let y=0; y<=gridH; y++) {
+    ctx.beginPath();
+    ctx.moveTo(0, y * cellH);
+    ctx.lineTo(canvas.width, y * cellH);
+    ctx.stroke();
+  }
+
+  // draw trails first (so heads on top)
+  // agent1 trail: reddish
+  ctx.globalAlpha = 0.9;
+  (state.agent1_trail || []).forEach((pos,i) => {
+    const x = pos[0], y = pos[1];
+    ctx.fillStyle = 'rgba(255,100,100,' + (0.35 + 0.65 * (i/(state.agent1_trail.length||1))) + ')';
+    ctx.fillRect(x*cellW+1, y*cellH+1, cellW-2, cellH-2);
+  });
+
+  // agent2 trail: bluish
+  (state.agent2_trail || []).forEach((pos,i) => {
+    const x = pos[0], y = pos[1];
+    ctx.fillStyle = 'rgba(100,120,255,' + (0.35 + 0.65 * (i/(state.agent2_trail.length||1))) + ')';
+    ctx.fillRect(x*cellW+1, y*cellH+1, cellW-2, cellH-2);
+  });
+
+  // draw heads
+  const a1 = state.agent1_trail && state.agent1_trail.length ? state.agent1_trail[state.agent1_trail.length - 1] : null;
+  const a2 = state.agent2_trail && state.agent2_trail.length ? state.agent2_trail[state.agent2_trail.length - 1] : null;
+
+  if (a1) {
+    ctx.fillStyle = 'red';
+    ctx.fillRect(a1[0]*cellW+1, a1[1]*cellH+1, cellW-2, cellH-2);
+  }
+
+  if (a2) {
+    ctx.fillStyle = 'blue';
+    ctx.fillRect(a2[0]*cellW+1, a2[1]*cellH+1, cellW-2, cellH-2);
+  }
+
+  document.getElementById('turn').innerText = state.turn;
+  ctx.globalAlpha = 1.0;
+}
+
+async function fetchAndDraw() {
+  try {
+    const res = await fetch('/state');
+    if (!res.ok) return;
+    const state = await res.json();
+    draw(state);
+  } catch (e) {
+    // ignore transient errors
+  }
+}
+
+// poll every 250 ms
+setInterval(fetchAndDraw, 250);
+fetchAndDraw();
+</script>
+</body>
+</html>
