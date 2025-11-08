@@ -405,6 +405,7 @@ def main():
 
     # Game loop (same logic as your original script)
     while True:
+        time.sleep(0.5)
         print(f"\n=== Turn {judge.game.turns + 1} ===")
 
         # Get moves from both players
