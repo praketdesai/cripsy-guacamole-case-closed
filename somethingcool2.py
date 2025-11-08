@@ -14,8 +14,8 @@ LAST_POSTED_STATE = {}
 
 game_lock = Lock()
  
-PARTICIPANT = "ParticipantONE"
-AGENT_NAME = "somethingONE"
+PARTICIPANT = "ParticipantTWO"
+AGENT_NAME = "somethingTWO"
 
 
 @app.route("/", methods=["GET"])
@@ -94,8 +94,7 @@ def send_move():
         state = dict(LAST_POSTED_STATE)   
         my_agent = GLOBAL_GAME.agent1 if player_number == 1 else GLOBAL_GAME.agent2
         boosts_remaining = my_agent.boosts_remaining
-   
-            # -----------------your code here-------------------
+        # -----------------your code here-------------------
         import random
         from collections import deque
 
@@ -185,7 +184,9 @@ def send_move():
         def flood_fill(start, blocked: set) -> int:
             """Return size of region reachable from start without crossing blocked."""
             start = wrap(start)
-            visited = set([start])
+            if start in blocked:
+                return 0
+            visited = {start}
             q = deque([start])
             count = 0
             while q:
@@ -206,67 +207,26 @@ def send_move():
                     deg += 1
             return deg
 
-        def territory_score(my_start, opp_start, blocked: set) -> int:
-            """
-            Voronoi-style territory: multi-source BFS from both heads.
-            Score = (#cells closer to me) - (#cells closer to opp).
-            """
-            owner = {}
-            dist = {}
-            q = deque()
-
-            my_start = wrap(my_start)
-            opp_start = wrap(opp_start)
-
-            if my_start not in blocked:
-                owner[my_start] = 1
-                dist[my_start] = 0
-                q.append(my_start)
-            if opp_start not in blocked:
-                owner[opp_start] = 2
-                dist[opp_start] = 0
-                q.append(opp_start)
-
-            while q:
-                x, y = q.popleft()
-                cur_owner = owner[(x, y)]
-                cur_d = dist[(x, y)]
-                for nx, ny in neighbors((x, y)):
-                    if (nx, ny) in blocked:
-                        continue
-                    nd = cur_d + 1
-                    if (nx, ny) not in dist:
-                        dist[(nx, ny)] = nd
-                        owner[(nx, ny)] = cur_owner
-                        q.append((nx, ny))
-                    else:
-                        # Same distance from me & opponent -> contested cell
-                        if nd == dist[(nx, ny)] and owner[(nx, ny)] != cur_owner:
-                            owner[(nx, ny)] = 0
-
-            my_cells = sum(1 for o in owner.values() if o == 1)
-            opp_cells = sum(1 for o in owner.values() if o == 2)
-            return my_cells - opp_cells
+        def torus_distance(a: tuple[int, int], b: tuple[int, int]) -> int:
+            """Manhattan distance on torus."""
+            ax, ay = a
+            bx, by = b
+            if width == 0 or height == 0:
+                return 0
+            dx = min((ax - bx) % width, (bx - ax) % width)
+            dy = min((ay - by) % height, (by - ay) % height)
+            return dx + dy
 
         dirs = [Direction.UP, Direction.DOWN, Direction.LEFT, Direction.RIGHT]
 
-        def evaluate_move(direction, use_boost: bool) -> float:
+        def simulate_my_move(direction, use_boost: bool):
             """
-            Simulate moving in 'direction' (1 or 2 steps if boosting),
-            then score resulting position based on:
-              - reachable space via flood-fill
-              - territory race vs opponent
-              - local freedom (degree)
-              - distance from center
-              - boost risk
+            Simulate my move (1 or 2 steps). Return (head, blocked) or (None, None) if I die.
             """
-            # Avoid explicit reverse; judge will ignore it anyway, but don’t waste turn.
             if is_reverse(direction, my_dir_est):
-                return -1e18
+                return None, None
 
             blocked = set(BASE_BLOCKED)
-
-            # Simulate my move (1 or 2 steps)
             steps = 2 if (use_boost and boosts_remaining > 0) else 1
             head = my_head
 
@@ -274,73 +234,143 @@ def send_move():
                 nx, ny = wrap((head[0] + direction.value[0], head[1] + direction.value[1]))
                 new_pos = (nx, ny)
 
-                # Immediate collision with any trail (mine or theirs)
-                if new_pos in blocked or new_pos in my_trail_set or new_pos in opp_trail_set:
-                    return -1e18
+                if (
+                    new_pos in blocked or
+                    new_pos in my_trail_set or
+                    new_pos in opp_trail_set
+                ):
+                    return None, None  # I die
 
                 head = new_pos
                 blocked.add(head)
 
-            my_future_head = head
+            return head, blocked
 
-            # Crude opponent prediction: one step straight if possible
-            opp_future_head = opp_head
-            opp_alive = True
-            if opp_dir_est is not None:
+        def evaluate_move(direction, use_boost: bool) -> float:
+            """
+            Robust 2-ply heuristic:
+              - simulate my move,
+              - consider all opponent replies,
+              - assume opponent picks the reply with the worst score for me.
+            Score balances:
+              - my_space - opp_space,
+              - trap pressure (their escape moves),
+              - my local safety,
+              - distance to opponent (hunting),
+              - avoiding bad trades / draws.
+            """
+            my_future_head, blocked_after_my = simulate_my_move(direction, use_boost)
+            if my_future_head is None:
+                return -1e18  # immediate death
+
+            # Quick early-out: if opponent somehow already dead
+            if not opp_trail:
+                return 1e9
+
+            worst_score = None
+
+            # Try all opponent replies; assume they pick the one that minimizes our score
+            for odir in dirs:
+                if opp_dir_est and is_reverse(odir, opp_dir_est):
+                    continue
+
                 ox, oy = opp_head
-                odx, ody = opp_dir_est.value
-                nx, ny = wrap((ox + odx, oy + ody))
-                cand = (nx, ny)
-                if cand in blocked or cand == my_future_head:
-                    opp_alive = False
+                onx, ony = wrap((ox + odir.value[0], oy + odir.value[1]))
+                opp_new = (onx, ony)
+
+                # Head-on: both collide in same cell
+                head_on = (opp_new == my_future_head)
+
+                # Opponent hits something
+                opp_hits_trail = (
+                    opp_new in blocked_after_my or
+                    opp_new in my_trail_set or
+                    opp_new in opp_trail_set
+                )
+
+                if head_on and not opp_hits_trail:
+                    # Avoid mutual suicides: big negative compared to clean win
+                    branch_score = -5e7
+                elif opp_hits_trail:
+                    # They die, we live -> huge win
+                    branch_score = 8e8
                 else:
-                    opp_future_head = cand
-                    blocked.add(opp_future_head)
+                    # Both alive in this branch; evaluate board position
+                    blocked_world = set(blocked_after_my)
+                    blocked_world.add(opp_new)
 
-            # Hardcore avoid: predicted head-on collision
-            if opp_alive and opp_future_head == my_future_head:
-                return -1e18
+                    my_space = flood_fill(my_future_head, blocked_world)
+                    opp_space = flood_fill(opp_new, blocked_world)
+                    my_deg = local_degree(my_future_head, blocked_world)
+                    opp_deg = local_degree(opp_new, blocked_world)
+                    dist = torus_distance(my_future_head, opp_new)
 
-            # Flood-fill space just for me
-            my_space = flood_fill(my_future_head, blocked)
+                    # How many safe moves do they have FROM opp_new now?
+                    opp_safe_moves = 0
+                    for od2 in dirs:
+                        o2x, o2y = opp_new
+                        sdx, sdy = od2.value
+                        tx, ty = wrap((o2x + sdx, o2y + sdy))
+                        cand2 = (tx, ty)
+                        if (
+                            cand2 in blocked_world or
+                            cand2 in my_trail_set or
+                            cand2 in opp_trail_set or
+                            cand2 == my_future_head
+                        ):
+                            continue
+                        opp_safe_moves += 1
 
-            # Territory differential if opponent survives
-            terr = 0
-            if opp_alive:
-                terr = territory_score(my_future_head, opp_future_head, blocked)
+                    # Trap pressure: fewer safe moves is better
+                    if opp_safe_moves == 0:
+                        trap_bonus = 90.0
+                    elif opp_safe_moves == 1:
+                        trap_bonus = 40.0
+                    elif opp_safe_moves == 2:
+                        trap_bonus = 10.0
+                    else:
+                        trap_bonus = 0.0
 
-            # Local safety (branching factor around head)
-            deg = local_degree(my_future_head, blocked)
+                    space_diff = my_space - opp_space
 
-            # Distance to board center (prefer slightly towards center)
-            if width and height:
-                cx = (width - 1) / 2.0
-                cy = (height - 1) / 2.0
-                dx_center = abs(my_future_head[0] - cx)
-                dy_center = abs(my_future_head[1] - cy)
-                center_penalty = dx_center + dy_center
-            else:
-                center_penalty = 0.0
+                    # Core heuristic: area control + safety + pressure + proximity
+                    branch_score = (
+                        7.0 * space_diff +      # dominate area
+                        4.0 * my_space -
+                        3.0 * opp_space +
+                        3.0 * my_deg -
+                        2.0 * opp_deg +
+                        trap_bonus -
+                        0.6 * dist              # slightly prefer being closer (to hunt)
+                    )
 
-            # Compose final heuristic score
-            score = (
-                5.0 * my_space +       # survival / reachable area
-                2.5 * terr +           # win the territory race
-                3.0 * deg -            # avoid tight corridors
-                0.8 * center_penalty   # mild push toward center
-            )
+                    # Late game, territory and traps matter more
+                    if turn_count > 120:
+                        branch_score += 4.0 * space_diff + 0.5 * trap_bonus
 
-            # Boost risk: only worth it when space is really good
+                if worst_score is None or branch_score < worst_score:
+                    worst_score = branch_score
+
+            if worst_score is None:
+                worst_score = 5e8  # silly fallback, treat as great
+
+            # Boost adjustment: only keep boosts that are good in worst case
             if use_boost:
-                score -= 10.0  # base risk
-                if my_space > 40:
-                    score += 8.0  # compensates when we clearly have a big open field
+                # Base risk penalty
+                worst_score -= 15.0
 
-            # Late-game: territory matters more
-            if turn_count > 120:
-                score += 0.5 * terr
+                # Re-estimate my_space vs opp_space in this world for a proxy
+                my_space_proxy = flood_fill(my_future_head, blocked_after_my)
+                opp_space_proxy = flood_fill(opp_head, blocked_after_my | {my_future_head})
+                space_diff_proxy = my_space_proxy - opp_space_proxy
 
-            return score
+                # Favor boosts when even worst-case keeps strong advantage
+                if space_diff_proxy > 25 and my_space_proxy > 30:
+                    worst_score += 40.0
+                elif space_diff_proxy > 10 and my_space_proxy > 20:
+                    worst_score += 15.0
+
+            return worst_score
 
         best_score = -1e19
         best_dir = Direction.RIGHT
@@ -348,26 +378,23 @@ def send_move():
 
         # Evaluate all directions with and without boost
         for d in dirs:
-            # Avoid reverse if we can estimate our current heading
             if my_dir_est and is_reverse(d, my_dir_est):
                 continue
 
-            # No boost
             s_no = evaluate_move(d, use_boost=False)
             if s_no > best_score:
                 best_score = s_no
                 best_dir = d
                 best_use_boost = False
 
-            # With boost: only consider if we actually have boosts and not at the very start
-            if boosts_remaining > 0 and turn_count > 15:
+            if boosts_remaining > 0 and turn_count > 8:
                 s_boost = evaluate_move(d, use_boost=True)
                 if s_boost > best_score:
                     best_score = s_boost
                     best_dir = d
                     best_use_boost = True
 
-        # If literally everything looks terrible (we’re trapped), fall back to any non-wall move
+        # Fallback if everything is awful (trapped)
         if best_score < -1e10:
             legal_dirs = []
             for d in dirs:
@@ -378,13 +405,16 @@ def send_move():
                     legal_dirs.append(d)
 
             if not legal_dirs:
-                legal_dirs = dirs  # totally doomed, just pick something
+                legal_dirs = dirs
 
             best_dir = random.choice(legal_dirs)
             best_use_boost = False
 
         move = best_dir.name + (":BOOST" if best_use_boost else "")
         # -----------------end code here--------------------
+
+
+
 
 
     return jsonify({"move": move}), 200
@@ -403,5 +433,5 @@ def end_game():
 
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", "5008"))
+    port = int(os.environ.get("PORT", "5009"))
     app.run(host="0.0.0.0", port=port, debug=True)
