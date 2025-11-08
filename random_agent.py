@@ -1,5 +1,7 @@
 import os
 import uuid
+import random
+import socket
 from flask import Flask, request, jsonify
 from threading import Lock
 from collections import deque
@@ -91,20 +93,39 @@ def send_move():
     player_number = request.args.get("player_number", default=1, type=int)
 
     with game_lock:
-        state = dict(LAST_POSTED_STATE)   
         my_agent = GLOBAL_GAME.agent1 if player_number == 1 else GLOBAL_GAME.agent2
+        board = GLOBAL_GAME.board.grid
         boosts_remaining = my_agent.boosts_remaining
-   
-    # -----------------your code here-------------------
-    # Simple example: always go RIGHT (replace this with your logic)
-    # To use a boost: move = "RIGHT:BOOST"
-    move = "RIGHT"
-    
-    # Example: Use boost if available and it's late in the game
-    # turn_count = state.get("turn_count", 0)
-    # if boosts_remaining > 0 and turn_count > 50:
-    #     move = "RIGHT:BOOST"
-    
+
+    # Current position
+    head_x, head_y = my_agent.trail[-1]
+    width, height = len(board[0]), len(board)
+
+    # Potential moves
+    directions = {
+        "UP": (0, -1),
+        "DOWN": (0, 1),
+        "LEFT": (-1, 0),
+        "RIGHT": (1, 0)
+    }
+
+    safe_moves = []
+
+    for move, (dx, dy) in directions.items():
+        new_x = (head_x + dx) % width
+        new_y = (head_y + dy) % height
+        if (new_x, new_y) not in my_agent.trail:
+            safe_moves.append(move)
+
+    if not safe_moves:
+        # No safe moves, pick a how to die
+        move = random.choice(list(directions.keys()))
+    else:
+        move = random.choice(safe_moves)
+
+    # Use boost
+    if boosts_remaining > 0 and random.random() > 0.9:
+        move += ":BOOST"
     # -----------------end code here--------------------
 
     return jsonify({"move": move}), 200
@@ -123,5 +144,10 @@ def end_game():
 
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", "5008"))
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(0.1)
+        if s.connect_ex(("127.0.0.1", 5008)) == 0:
+            port = int(os.environ.get("PORT", "5009"))
+        else:
+            port = int(os.environ.get("PORT", "5008"))
     app.run(host="0.0.0.0", port=port, debug=True)
