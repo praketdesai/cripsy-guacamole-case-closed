@@ -70,3 +70,33 @@ def apply_move(bit_map, pos, move):
         new_map[y, x] = 1  # Mark trail
 
     return new_map, (x, y), False
+
+def apply_move_inplace(bit_map, pos, move):
+    """
+    Apply a move in-place to the bit_map.
+    Returns (new_pos, dead, changed_cells)
+    where changed_cells is a list of (x, y) that were set to 1.
+    """
+    H, W = bit_map.shape
+    dx, dy, boost = move
+    steps = 2 if boost else 1
+    x, y = pos
+    changed = []
+
+    for _ in range(steps):
+        nx, ny = (x + dx) % W, (y + dy) % H
+        if bit_map[ny, nx]:  # collision
+            return (x, y), True, changed
+        x, y = nx, ny
+        bit_map[ny, nx] = 1
+        changed.append((nx, ny))
+
+    return (x, y), False, changed
+
+
+def undo_move_inplace(bit_map, changed_cells):
+    """
+    Undo an in-place move by clearing the cells in changed_cells.
+    """
+    for (x, y) in changed_cells:
+        bit_map[y, x] = 0

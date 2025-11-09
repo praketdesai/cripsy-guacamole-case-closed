@@ -2,8 +2,8 @@ import time
 import random
 from collections import deque
 from case_closed_game import Game
-from util import BOARD_HEIGHT, BOARD_WIDTH, DELTAS, game_to_bit_map, generate_moves, apply_move
-from heuristic import evaluate_position
+from util import BOARD_HEIGHT, BOARD_WIDTH, DELTAS, game_to_bit_map, generate_moves, apply_move_inplace, undo_move_inplace
+from heuristic import evaluate_position, light_evaluate
 
 
 # ----------------------
@@ -30,17 +30,17 @@ def alphabeta(bit_map, our_pos, enemy_pos, our_boosts, enemy_boosts,
 
     # Move ordering
     def move_score(move):
-        new_map, new_pos, dead = apply_move(bit_map, pos, move)
+        new_pos, dead, changed = apply_move_inplace(bit_map, pos, move)
         if dead:
             return -9999
-        return -evaluate_position(
-            new_map,
+        score = -light_evaluate(
+            bit_map,
             new_pos if maximizing else our_pos,
             enemy_pos if maximizing else new_pos,
-            our_boosts,
-            enemy_boosts,
-            turn_count
         )
+
+        undo_move_inplace(bit_map, changed)
+        return score
 
     moves.sort(key=move_score, reverse=maximizing)
 
@@ -48,14 +48,14 @@ def alphabeta(bit_map, our_pos, enemy_pos, our_boosts, enemy_boosts,
     best_moves = []
 
     for move in moves:
-        new_map, new_pos, dead = apply_move(bit_map, pos, move)
+        new_pos, dead, changed = apply_move_inplace(bit_map, pos, move)
 
         if dead:
             val = -99999 if maximizing else 99999
         else:
             boost_used = ":BOOST" in move
             val, _ = alphabeta(
-                new_map,
+                bit_map,
                 new_pos if maximizing else our_pos,
                 enemy_pos if maximizing else new_pos,
                 our_boosts - (1 if maximizing and boost_used else 0),
@@ -85,6 +85,8 @@ def alphabeta(bit_map, our_pos, enemy_pos, our_boosts, enemy_boosts,
             beta = min(beta, val)
             if beta <= alpha:
                 break
+            
+        undo_move_inplace(bit_map, changed)
 
     # Choose randomly among tied best moves
     best_move = random.choice(best_moves) if best_moves else None
@@ -94,7 +96,7 @@ def alphabeta(bit_map, our_pos, enemy_pos, our_boosts, enemy_boosts,
 # ----------------------
 # Choose Next Move
 # ----------------------
-def choose_next_move(game: Game, player_number=1, max_depth=4, time_limit=3.2):
+def choose_next_move(game: Game, player_number=1, max_depth=4, time_limit=3.8):
     our_agent = game.agent1 if player_number == 1 else game.agent2
     enemy_agent = game.agent2 if player_number == 1 else game.agent1
 
@@ -112,7 +114,7 @@ def choose_next_move(game: Game, player_number=1, max_depth=4, time_limit=3.2):
     fallback_score = float("-inf")
 
     try:
-        depth = 2
+        depth = 4
         while depth <= max_depth:
             fallback_move = best_move
             fallback_score = best_score
