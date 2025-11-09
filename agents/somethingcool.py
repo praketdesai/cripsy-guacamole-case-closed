@@ -1,17 +1,27 @@
 import os
-import uuid
+import socket
 from flask import Flask, request, jsonify
 from threading import Lock
 from collections import deque
+import logging
+import sys
+from pathlib import Path
+
+# Add parent directory to path to import game modules
+parent_dir = Path(__file__).resolve().parent.parent
+sys.path.append(str(parent_dir))
 
 from case_closed_game import Game, Direction, GameResult
 
-# Flask API server setup
+# ------------------------------
+# Flask server setup
+# ------------------------------
 app = Flask(__name__)
+log = logging.getLogger('werkzeug')
+log.setLevel(logging.ERROR)  # suppress request logging
 
 GLOBAL_GAME = Game()
 LAST_POSTED_STATE = {}
-
 game_lock = Lock()
  
 PARTICIPANT = "ParticipantONE"
@@ -403,5 +413,6 @@ def end_game():
 
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", "5008"))
-    app.run(host="0.0.0.0", port=port, debug=True)
+    port = int(os.environ.get("PORT", "5008"))  # default to 5008
+    print(f"Starting agent on port {port}...")  # optional debug
+    app.run(host="0.0.0.0", port=port, debug=False)

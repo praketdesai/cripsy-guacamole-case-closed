@@ -27,12 +27,24 @@ function draw(state) {
   const cellW = canvas.width / gridW;
   const cellH = canvas.height / gridH;
 
-  // clear
+  // clear canvas
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  // draw grid background
-  ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  // draw Voronoi cells first
+  if (state.board) {
+    for (let y = 0; y < gridH; y++) {
+      for (let x = 0; x < gridW; x++) {
+        const cellVal = state.board[y][x];
+        if (cellVal === 3) {  // agent1 Voronoi
+          ctx.fillStyle = 'rgba(255,180,180,0.3)';
+          ctx.fillRect(x*cellW, y*cellH, cellW, cellH);
+        } else if (cellVal === 4) { // agent2 Voronoi
+          ctx.fillStyle = 'rgba(150,180,255,0.3)';
+          ctx.fillRect(x*cellW, y*cellH, cellW, cellH);
+        }
+      }
+    }
+  }
 
   // optional grid lines
   ctx.strokeStyle = '#eee';
@@ -49,35 +61,27 @@ function draw(state) {
     ctx.stroke();
   }
 
-  // draw trails first (so heads on top)
-  // agent1 trail: reddish
+  // draw trails (agent1 red, agent2 blue)
+  // draw trails (agent1 dark gray, agent2 black)
   ctx.globalAlpha = 0.9;
   (state.agent1_trail || []).forEach((pos,i) => {
     const x = pos[0], y = pos[1];
-    ctx.fillStyle = 'rgba(255,100,100,' + (0.35 + 0.65 * (i/(state.agent1_trail.length||1))) + ')';
+    ctx.fillStyle = 'rgba(10,10,10,80)';
     ctx.fillRect(x*cellW+1, y*cellH+1, cellW-2, cellH-2);
   });
-
-  // agent2 trail: bluish
   (state.agent2_trail || []).forEach((pos,i) => {
     const x = pos[0], y = pos[1];
-    ctx.fillStyle = 'rgba(100,120,255,' + (0.35 + 0.65 * (i/(state.agent2_trail.length||1))) + ')';
+    ctx.fillStyle = 'rgba(10,10,10,80)';
     ctx.fillRect(x*cellW+1, y*cellH+1, cellW-2, cellH-2);
   });
 
-  // draw heads
+
+  // draw heads on top
   const a1 = state.agent1_trail && state.agent1_trail.length ? state.agent1_trail[state.agent1_trail.length - 1] : null;
   const a2 = state.agent2_trail && state.agent2_trail.length ? state.agent2_trail[state.agent2_trail.length - 1] : null;
 
-  if (a1) {
-    ctx.fillStyle = 'red';
-    ctx.fillRect(a1[0]*cellW+1, a1[1]*cellH+1, cellW-2, cellH-2);
-  }
-
-  if (a2) {
-    ctx.fillStyle = 'blue';
-    ctx.fillRect(a2[0]*cellW+1, a2[1]*cellH+1, cellW-2, cellH-2);
-  }
+  if (a1) { ctx.fillStyle = 'red'; ctx.fillRect(a1[0]*cellW+1, a1[1]*cellH+1, cellW-2, cellH-2); }
+  if (a2) { ctx.fillStyle = 'blue'; ctx.fillRect(a2[0]*cellW+1, a2[1]*cellH+1, cellW-2, cellH-2); }
 
   document.getElementById('turn').innerText = state.turn;
   ctx.globalAlpha = 1.0;

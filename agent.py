@@ -104,7 +104,6 @@ def send_move():
     # turn_count = state.get("turn_count", 0)
     # if boosts_remaining > 0 and turn_count > 50:
     #     move = "RIGHT:BOOST"
-    
     # -----------------end code here--------------------
 
     return jsonify({"move": move}), 200

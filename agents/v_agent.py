@@ -1,33 +1,32 @@
 import os
-import uuid
-import random
 import socket
 from flask import Flask, request, jsonify
 from threading import Lock
 from collections import deque
-
+import logging
 import sys
 from pathlib import Path
+
+# Add parent directory to path to import game modules
 parent_dir = Path(__file__).resolve().parent.parent
 sys.path.append(str(parent_dir))
 
-from case_closed_game import Game, Direction, GameResult
+from case_closed_game import Game
+import logic
 
-# Flask API server setup
-import logging
-
+# ------------------------------
+# Flask server setup
+# ------------------------------
 app = Flask(__name__)
-
 log = logging.getLogger('werkzeug')
-log.setLevel(logging.ERROR)
+log.setLevel(logging.ERROR)  # suppress request logging
 
 GLOBAL_GAME = Game()
 LAST_POSTED_STATE = {}
-
 game_lock = Lock()
- 
+
 PARTICIPANT = "ParticipantX"
-AGENT_NAME = "SW_RANDY"
+AGENT_NAME = "BigBrother"
 
 
 @app.route("/", methods=["GET"])
@@ -75,7 +74,6 @@ def _update_local_game_from_post(data: dict):
         if "turn_count" in data:
             GLOBAL_GAME.turns = int(data["turn_count"])
 
-
 @app.route("/send-state", methods=["POST"])
 def receive_state():
     """Judge calls this to push the current game state to the agent server.
@@ -103,40 +101,7 @@ def send_move():
     player_number = request.args.get("player_number", default=1, type=int)
 
     with game_lock:
-        my_agent = GLOBAL_GAME.agent1 if player_number == 1 else GLOBAL_GAME.agent2
-        board = GLOBAL_GAME.board.grid
-        boosts_remaining = my_agent.boosts_remaining
-
-    # Current position
-    head_x, head_y = my_agent.trail[-1]
-    width, height = len(board[0]), len(board)
-
-    # Potential moves
-    directions = {
-        "UP": (0, -1),
-        "DOWN": (0, 1),
-        "LEFT": (-1, 0),
-        "RIGHT": (1, 0)
-    }
-
-    safe_moves = []
-
-    for move, (dx, dy) in directions.items():
-        new_x = (head_x + dx) % width
-        new_y = (head_y + dy) % height
-        if (new_x, new_y) not in my_agent.trail:
-            safe_moves.append(move)
-
-    if not safe_moves:
-        # No safe moves, pick a how to die
-        move = random.choice(list(directions.keys()))
-    else:
-        move = random.choice(safe_moves)
-
-    # Use boost
-    if boosts_remaining > 0 and random.random() > 0.9:
-        move += ":BOOST"
-    # -----------------end code here--------------------
+        move = logic.choose_next_move(GLOBAL_GAME, player_number)
 
     return jsonify({"move": move}), 200
 
@@ -151,6 +116,7 @@ def end_game():
     if data:
         _update_local_game_from_post(data)
     return jsonify({"status": "acknowledged"}), 200
+
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "5008"))  # default to 5008
