@@ -451,7 +451,7 @@ if __name__ == "__main__":
     # run_agent("agents/r_agent.py")
     time.sleep(0.5)  # let it start
     os.environ["PORT"] = "5009"
-    run_agent("agents/r_agent.py")
+    run_agent("agent.py")
     time.sleep(0.5)
 
 
