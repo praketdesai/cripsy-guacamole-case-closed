@@ -398,51 +398,36 @@ def main():
             judge.end_game(GameResult.DRAW)
             return result
 
-agents = ["defense_king.py", "agents/v_agent.py", "agents/m_agent.py", "agents/random_agent.py"]
-test_agent = agents[2]
-opp_agent = agents[1]
-NUM_TESTS = 10
+agents = ["defense_king.py", "agents/r_agent.py", "agents/c_agent.py", "agents/s_agent.py", "agents/v_agent.py", "agents/s_agent.py", "agents/random_agent.py"]
+test_agent = agents[1]
+NUM_TESTS = 3
 
 def run_all_games():
-    wins = 0
-    total_games = NUM_TESTS * 2
 
-    with tqdm(total=total_games, desc="Running games") as pbar:
-        # As Agent 1
-        os.environ["PORT"] = "5008"
-        run_agent(test_agent)
-        time.sleep(0.5)
-        os.environ["PORT"] = "5009"
-        run_agent(opp_agent)
-        time.sleep(0.5)
-        for _ in range(NUM_TESTS):
 
-            result = main()
-            if result == GameResult.AGENT1_WIN:
-                wins += 1
+    with tqdm(total=20, desc="Running games") as pbar:
+        for i in range(4):
+            wins = 0
+            # As Agent 1
+            os.environ["PORT"] = "5008"
+            run_agent(test_agent)
+            time.sleep(0.5)
+            os.environ["PORT"] = "5009"
+            
+            opp_agent = agents[i+2]
+            run_agent(opp_agent)
+            time.sleep(0.5)
+            for _ in range(NUM_TESTS):
 
-            pbar.update(1)
-        kill_agents()
+                result = main()
+                if result == GameResult.AGENT1_WIN:
+                    wins += 1
+
+                pbar.update(1)
+            kill_agents()
+            
+            print(f"{test_agent} won {wins}/{NUM_TESTS} games ({wins/NUM_TESTS:.2%}) against {opp_agent}")
         
-        print(f"{test_agent} won {wins}/{NUM_TESTS} games ({wins/NUM_TESTS:.2%}) against {opp_agent}")
-        wins = 0
-        os.environ["PORT"] = "5008"
-        run_agent(opp_agent)
-        time.sleep(0.5)
-        os.environ["PORT"] = "5009"
-        run_agent(test_agent)
-        time.sleep(0.5)
-        # As Agent 2
-        for _ in range(NUM_TESTS):
-
-            result = main()
-            if result == GameResult.AGENT2_WIN:
-                wins += 1
-
-            pbar.update(1)
-        kill_agents()
-
-    print(f"{test_agent} won {wins}/{NUM_TESTS} games ({wins/NUM_TESTS:.2%}) against {opp_agent}")
 
 if __name__ == "__main__":
     try:
