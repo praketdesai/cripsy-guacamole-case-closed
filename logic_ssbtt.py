@@ -14,8 +14,14 @@ DELTAS = {"UP": (0, -1), "DOWN": (0, 1), "LEFT": (-1, 0), "RIGHT": (1, 0)}
 # ----------------------
 # Board Conversion
 # ----------------------
-def game_to_bit_map(game: Game):
+def game_to_bit_map(game: Game, player_number=1):
     bit_map = np.zeros((BOARD_HEIGHT, BOARD_WIDTH), dtype=np.uint8)
+
+
+    if player_number == 1:
+        wall_list = game.agent1.get_trail_positions()[:-1] + game.agent2.get_trail_positions()
+    else:
+        wall_list = game.agent1.get_trail_positions() + game.agent2.get_trail_positions()[:-1]
     for tx, ty in game.agent1.get_trail_positions() + game.agent2.get_trail_positions():
         if 0 <= tx < BOARD_WIDTH and 0 <= ty < BOARD_HEIGHT:
             bit_map[ty, tx] = 1
@@ -58,6 +64,76 @@ def apply_move(bit_map, pos, move):
         new_map[y, x] = 1
     return new_map, (x, y), False
 
+
+
+def dead_end_fill(bit_map):
+    """
+    Modify a copy of bit_map in-place:
+    Repeatedly mark every open cell with <= 1 open neighbor as blocked (1).
+    """
+    H, W = bit_map.shape
+    filled = bit_map.copy()
+    changed = True
+    while changed:
+        changed = False
+        for y in range(H):
+            for x in range(W):
+                if filled[y, x] == 0:
+                    open_neighbors = 0
+                    for dx, dy in ((0,1),(0,-1),(1,0),(-1,0)):
+                        nx, ny = (x+dx)%W, (y+dy)%H
+                        if filled[ny, nx] == 0:
+                            open_neighbors += 1
+                    if open_neighbors <= 1:
+                        filled[y, x] = 1  # Mark dead end as wall
+                        changed = True
+    return filled
+
+
+def greedy_safe_wall_hug_heuristic(bit_map, our_pos):
+    """
+    High score for wall hugging, but safer: fills dead ends before scoring.
+    Penalizes small surviving regions and corridors created by dead ends.
+    """
+
+    pruned_map = dead_end_fill(bit_map)
+    H, W = pruned_map.shape
+
+    dist_us = np.full((H, W), np.inf)
+
+    def bfs(start, dist) -> int:
+        count = 0
+        queue = deque([start])
+        sx, sy = start
+        dist[sy, sx] = 0
+        while queue:
+            x, y = queue.popleft()
+            count += 1
+            for dx, dy in ((0,1),(0,-1),(1,0),(-1,0)):
+                nx, ny = (x + dx) % W, (y + dy) % H
+                if pruned_map[ny, nx] or dist[ny, nx] != np.inf:
+                    continue
+                dist[ny, nx] = 1 # marked as visited
+                queue.append((nx, ny))
+        return count
+    
+    cells = bfs(our_pos, dist_us)
+
+    # Wall hugging part (use pruned map)
+    wall_count = 0
+    for dx, dy in ((0,1),(0,-1),(1,0),(-1,0)):
+        nx, ny = (our_pos[0]+dx)%W, (our_pos[1]+dy)%H
+        if pruned_map[ny, nx] != 0:
+            wall_count += 1
+
+    # Mobility part
+    # Recompute area after pruning dead ends (recommended)
+    area = cells
+    small_area_penalty = -100 if area <= 3 else 0
+
+    return wall_count + 0.01*area + small_area_penalty
+
+
 def heuristic(bit_map, our_pos, enemy_pos, our_boosts=0, enemy_boosts=0, turn_count=0):
     """
     Final unified heuristic:
@@ -79,21 +155,29 @@ def heuristic(bit_map, our_pos, enemy_pos, our_boosts=0, enemy_boosts=0, turn_co
     dist_us = np.full((H, W), np.inf)
     dist_enemy = np.full((H, W), np.inf)
 
-    def bfs(start, dist):
-        q = deque([start])
+    def bfs(start, dist, opp_loc) -> bool:
+        found_opp = False
+        queue = deque([start])
         sx, sy = start
         dist[sy, sx] = 0
-        while q:
-            x, y = q.popleft()
+        while queue:
+            x, y = queue.popleft()
+            if opp_loc == (x, y):
+                found_opp = True
             d = dist[y, x] + 1
             for dx, dy in ((0,1),(0,-1),(1,0),(-1,0)):
-                nx, ny = (x+dx) % W, (y+dy) % H
-                if free_mask[ny, nx] and dist[ny, nx] == np.inf:
-                    dist[ny, nx] = d
-                    q.append((nx, ny))
+                nx, ny = (x + dx) % W, (y + dy) % H
+                if bit_map[ny, nx] or dist[ny, nx] != np.inf:
+                    continue
+                dist[ny, nx] = d
+                queue.append((nx, ny))
+        return found_opp
 
-    bfs(our_pos, dist_us)
-    bfs(enemy_pos, dist_enemy)
+
+    is_endgame = bfs(our_pos, dist_us, enemy_pos)
+    if is_endgame:
+        return greedy_safe_wall_hug_heuristic(bit_map, our_pos)
+    bfs(enemy_pos, dist_enemy, our_pos)
 
     us_voronoi = np.sum((dist_us < dist_enemy) & free_mask)
     enemy_voronoi = np.sum((dist_enemy < dist_us) & free_mask)
@@ -411,24 +495,38 @@ def alphabeta(bit_map, our_pos, enemy_pos, our_boosts, enemy_boosts,
 # ----------------------
 # Choose Next Move
 # ----------------------
-def choose_next_move(game: Game, player_number=1, max_depth=4, time_limit=3.8):
-    our_agent = game.agent1 if player_number == 1 else game.agent2
-    enemy_agent = game.agent2 if player_number == 1 else game.agent1
+def choose_next_move(game: Game, player_number=1, max_depth=10, time_limit=3.2):
+    our_agent = game.agent1 if player_number==1 else game.agent2
+    enemy_agent = game.agent2 if player_number==1 else game.agent1
     bit_map = game_to_bit_map(game)
     our_pos = tuple(our_agent.trail[-1])
     enemy_pos = tuple(enemy_agent.trail[-1])
     our_boosts = getattr(our_agent, "boosts_remaining", 0)
     enemy_boosts = getattr(enemy_agent, "boosts_remaining", 0)
 
+    move_number = game.turns
+
     best_move = None
     start_time = time.time()
     try:
-        _, best_move = alphabeta(bit_map, our_pos, enemy_pos,
-                                 our_boosts, enemy_boosts,
-                                 max_depth, start_time=start_time, time_limit=time_limit,
-                                 turn_count=game.turns)
+        # iterative deepening
+        best_move_score = float("-inf")
+        best_move = None
+        fall_back_score = float("-inf")
+        fall_back = None
+        depth = 4
+        while depth < max_depth:
+            fall_back = best_move
+            fall_back_score = best_move_score
+            best_move_score, best_move = alphabeta(bit_map, our_pos, enemy_pos,
+                                    our_boosts, enemy_boosts,
+                                    depth, start_time=start_time, time_limit=time_limit, turn_count=move_number)
+            depth += 2
     except TimeoutError:
         pass
+
+    if (fall_back_score > best_move_score):
+        best_move = fall_back
 
     if not best_move:
         moves = generate_moves(bit_map, our_pos)

@@ -294,9 +294,9 @@ def main():
     PLAYER1_URL = os.getenv("PLAYER1_URL", "http://localhost:5008")
     # PLAYER1_URL = os.getenv("PLAYER2_URL", "https://algebra-captured-helpful-suited.trycloudflare.com/")
     # PLAYER1_URL = os.getenv("PLAYER2_URL", "https://grateful-layout-dietary-oven.trycloudflare.com/")
-    # PLAYER2_URL = os.getenv("PLAYER2_URL", "http://localhost:5009")
+    PLAYER2_URL = os.getenv("PLAYER2_URL", "http://localhost:5009")
     # PLAYER2_URL = os.getenv("PLAYER2_URL", "https://algebra-captured-helpful-suited.trycloudflare.com/")
-    PLAYER2_URL = os.getenv("PLAYER2_URL", "https://grateful-layout-dietary-oven.trycloudflare.com/")
+    # PLAYER2_URL = os.getenv("PLAYER2_URL", "https://grateful-layout-dietary-oven.trycloudflare.com/")
 
     # Creating judge
     print(f"Creating judge for {PLAYER1_URL} and {PLAYER2_URL}...")
@@ -448,10 +448,10 @@ if __name__ == "__main__":
     print("Visualizer running at http://localhost:5000")
 
     # Threads for agentsos.environ["PORT"] = "5008"
-    run_agent("agents/somethingcool.py")
+    run_agent("agents/r_agent.py")
     time.sleep(0.5)  # let it start
     os.environ["PORT"] = "5009"
-    run_agent("agents/v_agent.py")
+    run_agent("agents/m_agent.py")
     time.sleep(0.5)
 
 

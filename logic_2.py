@@ -24,24 +24,26 @@ def game_to_bit_map(game: Game):
 # Move Generation / Application
 # ----------------------
 def generate_moves(bit_map, pos, boosts=0):
-    """Return only valid moves (including checking boosted collisions)."""
     H, W = bit_map.shape
     x, y = pos
     moves = []
+
     for name, (dx, dy) in DELTAS.items():
         # Normal move
         nx, ny = (x + dx) % W, (y + dy) % H
         if bit_map[ny, nx] == 0:
             moves.append(name)
-        # Boosted move (if available)
+
+        # Boosted move
         if boosts > 0:
-            nx2, ny2 = (x + 2*dx) % W, (y + 2*dy) % H
-            if bit_map[ny, nx] == 0 and bit_map[ny2, nx2] == 0:
+            nx1, ny1 = (x + dx) % W, (y + dy) % H
+            nx2, ny2 = (nx1 + dx) % W, (ny1 + dy) % H
+            if bit_map[ny1, nx1] == 0 and bit_map[ny2, nx2] == 0:
                 moves.append(f"{name}:BOOST")
+
     return moves
 
 def apply_move(bit_map, pos, move):
-    """Apply a move safely, return (new_map, new_pos, dead)."""
     H, W = bit_map.shape
     new_map = bit_map.copy()
     boost = ":BOOST" in move
@@ -49,12 +51,14 @@ def apply_move(bit_map, pos, move):
     dx, dy = DELTAS[base_move]
     steps = 2 if boost else 1
     x, y = pos
+
     for _ in range(steps):
         nx, ny = (x + dx) % W, (y + dy) % H
         if new_map[ny, nx]:
             return new_map, (x, y), True  # dead
         x, y = nx, ny
         new_map[y, x] = 1
+
     return new_map, (x, y), False
 
 # ----------------------
@@ -156,7 +160,7 @@ def alphabeta(bit_map, our_pos, enemy_pos, our_boosts, enemy_boosts,
     def move_score(mv):
         nm, np_pos, dead = apply_move(bit_map, pos, mv)
         if dead:
-            return -9999
+            return -99999
         return -adaptive_heuristic(nm, np_pos if maximizing else our_pos,
                                    enemy_pos if maximizing else np_pos,
                                    our_boosts, enemy_boosts, turn_count)
