@@ -91,3 +91,6 @@ def evaluate_position(bit_map, our_pos, enemy_pos, our_boosts, enemy_boosts, tur
 
     # Final heuristic score
     return int(2 * (us_win - enemy_win) + mob)
+
+def light_evaluate(bit_map, our_pos, enemy_pos):
+    return abs(our_pos[0] - enemy_pos[0]) + abs(our_pos[1] - enemy_pos[1])
