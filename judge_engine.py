@@ -291,9 +291,10 @@ def main():
     time.sleep(5)
 
     # Get agent URLs from environment variables
-    # PLAYER1_URL = os.getenv("PLAYER1_URL", "http://localhost:5008")
-    # PLAYER1_URL = os.getenv("PLAYER2_URL", "https://algebra-captured-helpful-suited.trycloudflare.com/")
-    PLAYER1_URL = os.getenv("PLAYER1_URL", "https://grateful-layout-dietary-oven.trycloudflare.com/")
+    PLAYER1_URL = os.getenv("PLAYER1_URL", "http://localhost:5008")
+    # PLAYER1_URL = os.getenv("PLAYER1_URL", "https://algebra-captured-helpful-suited.trycloudflare.com/")
+    # PLAYER1_URL = os.getenv("PLAYER1_URL", "https://grateful-layout-dietary-oven.trycloudflare.com/")
+    # PLAYER1_URL = os.getenv("PLAYER1_URL", "https://reliance-publish-tops-adams.trycloudflare.com/")
     PLAYER2_URL = os.getenv("PLAYER2_URL", "http://localhost:5009")
     # PLAYER2_URL = os.getenv("PLAYER2_URL", "https://algebra-captured-helpful-suited.trycloudflare.com/")
     # PLAYER2_URL = os.getenv("PLAYER2_URL", "https://grateful-layout-dietary-oven.trycloudflare.com/")
@@ -448,7 +449,7 @@ if __name__ == "__main__":
     print("Visualizer running at http://localhost:5000")
 
     # Threads for agentsos.environ["PORT"] = "5008"
-    # run_agent("agents/r_agent.py")
+    run_agent("agents/r_agent.py")
     time.sleep(0.5)  # let it start
     os.environ["PORT"] = "5009"
     run_agent("agent.py")
