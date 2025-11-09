@@ -122,6 +122,17 @@ def choose_next_move(game, player_number=1, max_depth=4, time_limit=3.2):
     our_boosts = getattr(our_agent, "boosts_remaining", 0)
     enemy_boosts = getattr(enemy_agent, "boosts_remaining", 0)
 
+    
+    free_cells = np.sum(bit_map == 0)
+    if free_cells > 290:
+        max_depth = 4  # early game, large board -> shallow
+    elif free_cells > 200:
+        max_depth = 6  # mid game
+    elif free_cells > 100:
+        max_depth = 8  # late game, fewer options -> deeper search
+    else:
+        max_depth = 12  # late game, fewer options -> deeper search
+
     start_time = time.time()
     best_move = None
     try:
