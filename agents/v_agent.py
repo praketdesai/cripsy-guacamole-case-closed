@@ -119,6 +119,6 @@ def end_game():
 
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", "5008"))  # default to 5008
+    port = int(os.environ.get("PORT", "5009"))  # default to 5008
     print(f"Starting agent on port {port}...")  # optional debug
     app.run(host="0.0.0.0", port=port, debug=False)

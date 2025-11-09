@@ -3,6 +3,7 @@ import uuid
 from flask import Flask, request, jsonify
 from threading import Lock
 from collections import deque
+import logging
 
 from case_closed_game import Game, Direction, GameResult
 import copy
@@ -16,7 +17,7 @@ LAST_POSTED_STATE = {}
 game_lock = Lock()
  
 PARTICIPANT = "ParticipantX"
-AGENT_NAME = "MiniMaxX"
+AGENT_NAME = "DefenseKINGG"
 WIDTH = GLOBAL_GAME.board.width
 HEIGHT = GLOBAL_GAME.board.height
 EMPTY = 0
@@ -196,9 +197,6 @@ def territory_score(my_agent, opp_agent) -> int:
     my_cells = sum(1 for o in owner.values() if o == 1)
     opp_cells = sum(1 for o in owner.values() if o == 2)
 
-    # print(my_cells)
-    # print(opp_cells)
-
     return my_cells - opp_cells
 
 def flood_fill(my_agent) -> int:
@@ -265,7 +263,6 @@ def send_move():
         moves = []
 
         cur_dx, cur_dy = getCurrentDirection(agent)
-        print(getCurrentDirection(agent))
         opposite = (-cur_dx, -cur_dy)
         for d in (Direction.UP, Direction.DOWN, Direction.LEFT, Direction.RIGHT):
             if (d.value == opposite or imminentDeath(agent, d)):
@@ -276,8 +273,6 @@ def send_move():
                 moves.append((d, False))
                 if agent.boosts_remaining > 0 and imminentDeath(agent, d, True):
                     moves.append((d, True))
-
-        print(moves)
         return moves
 
     def is_terminal(game_obj) -> bool:
@@ -392,7 +387,6 @@ def send_move():
                 sim.step(enemy_d, d, enemy_use_boost, use_boost)
 
             score = minimax(sim, MAX_DEPTH - 1, float("-inf"), float("inf"), False, player_num)
-            print("Me: ", d, "opp: ", enemy_d, score)
             if score < worst_score:
                 worst_score = score
                 worst_move = (d, use_boost)
@@ -404,9 +398,6 @@ def send_move():
     # Format move string for judge
     dir_str = best_move[0].name
     move = dir_str + (":BOOST" if best_move[1] else "")
-
-    print("Sending: ", move)
-
 
     # -----------------end code here--------------------
 
@@ -426,5 +417,5 @@ def end_game():
 
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", "5008"))
+    port = int(os.environ.get("PORT", "5009"))
     app.run(host="0.0.0.0", port=port, debug=True)

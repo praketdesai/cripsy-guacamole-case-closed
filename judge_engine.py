@@ -448,13 +448,10 @@ if __name__ == "__main__":
     print("Visualizer running at http://localhost:5000")
 
     # Threads for agentsos.environ["PORT"] = "5008"
-    # run_agent("defense_king.py")
-    # run_agent("agents/v_agent.py")
-    run_agent("agents/r_agent.py")
+    run_agent("agents/somethingcool.py")
     time.sleep(0.5)  # let it start
     os.environ["PORT"] = "5009"
-    # run_agent("agents/c_agent.py")
-    # run_agent("agents/m_agent.py")
+    run_agent("agents/v_agent.py")
     time.sleep(0.5)
 
 
