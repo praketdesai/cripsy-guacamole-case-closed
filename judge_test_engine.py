@@ -4,8 +4,7 @@ import time
 import os
 from case_closed_game import Game, Direction, GameResult
 import random
-
-import visualizer
+from tqdm import tqdm
 
 
 import threading
@@ -20,6 +19,17 @@ def run_agent(script_path):
     with open(os.devnull, "w") as devnull:
         proc = subprocess.Popen(["python", script_path])
         agent_processes.append(proc)
+
+def kill_agents():
+    for p in agent_processes:
+        if p.poll() is None:  # still running
+            print(f"Terminating agent PID={p.pid}")
+            p.terminate()
+            try:
+                p.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                print(f"Force killing agent PID={p.pid}")
+                p.kill()
 
 class RandomPlayer:
     def __init__(self, player_id=1):
@@ -181,7 +191,6 @@ class Judge:
         
         # Validate move format
         if not isinstance(move, str):
-            print(f"Invalid move format by Player {player_num}: move must be a string")
             return "forfeit"
         
         # Parse move - can be "DIRECTION" or "DIRECTION:BOOST"
@@ -198,7 +207,6 @@ class Judge:
         }
         
         if direction_str not in direction_map:
-            print(f"Invalid direction by Player {player_num}: {direction_str}")
             return "forfeit"
         
         direction = direction_map[direction_str]
@@ -211,12 +219,9 @@ class Judge:
         cur_dx, cur_dy = current_dir.value
         req_dx, req_dy = direction.value
         if (req_dx, req_dy) == (-cur_dx, -cur_dy):
-            print(f"Player {player_num} attempted invalid move (opposite direction). Using current direction instead.")
             direction = current_dir
             direction_str = {Direction.UP: 'UP', Direction.DOWN: 'DOWN', 
                            Direction.LEFT: 'LEFT', Direction.RIGHT: 'RIGHT'}[direction]
-        
-        print(f"Player {player_num}'s move: {direction_str}{' (BOOST)' if use_boost else ''}{' (RANDOM)' if is_random else ''}")
         
         # Record move in game string with improved format
         move_abbrev = {'UP': 'U', 'DOWN': 'D', 'LEFT': 'L', 'RIGHT': 'R'}
@@ -287,34 +292,21 @@ def get_voronoi_board(board, agent1_trail, agent2_trail):
 
 
 def main():
-    print("Judge engine starting up, waiting for agents...")
-    time.sleep(5)
+    time.sleep(2)
 
     # Get agent URLs from environment variables
     PLAYER1_URL = os.getenv("PLAYER1_URL", "http://localhost:5008")
-    # PLAYER1_URL = os.getenv("PLAYER2_URL", "https://algebra-captured-helpful-suited.trycloudflare.com/")
-    # PLAYER1_URL = os.getenv("PLAYER2_URL", "https://grateful-layout-dietary-oven.trycloudflare.com/")
-    # PLAYER2_URL = os.getenv("PLAYER2_URL", "http://localhost:5009")
-    # PLAYER2_URL = os.getenv("PLAYER2_URL", "https://algebra-captured-helpful-suited.trycloudflare.com/")
-    PLAYER2_URL = os.getenv("PLAYER2_URL", "https://grateful-layout-dietary-oven.trycloudflare.com/")
+    PLAYER2_URL = os.getenv("PLAYER2_URL", "http://localhost:5009")
 
     # Creating judge
-    print(f"Creating judge for {PLAYER1_URL} and {PLAYER2_URL}...")
     judge = Judge(PLAYER1_URL, PLAYER2_URL)
 
     # Check connectivity and latency
     if not judge.check_latency():
-        print("Failed to connect to one or both players")
         return
-        
-    print(f"Player 1: {judge.p1_agent.agent_name} ({judge.p1_agent.participant})")
-    print(f"Player 2: {judge.p2_agent.agent_name} ({judge.p2_agent.participant})")
-    print(f"Initial latencies - P1: {judge.p1_agent.latency:.3f}s, P2: {judge.p2_agent.latency:.3f}s")
     
     # Send initial state to both players
-    print("Sending initial game state...")
     if not judge.send_state(1) or not judge.send_state(2):
-        print("Failed to send initial state")
         return
 
     # Random moves left for p1 and p2
@@ -323,7 +315,6 @@ def main():
 
     # Game loop
     while True:
-        print(f"\n=== Turn {judge.game.turns + 1} ===")
         # Get moves from both players
         p1_move = None
         p2_move = None
@@ -331,26 +322,21 @@ def main():
         p2_boost = False
         
         # Player 1 move
-        print("Requesting move from Player 1...")
         for attempt in range(1, 3):  # 2 attempts
             p1_move = judge.get_move(1, attempt, p1_random)
             if p1_move:
                 validation = judge.handle_move(p1_move, 1, is_random=False)
                 if validation == "forfeit":
-                    print("Player 1 forfeited")
                     judge.end_game(GameResult.AGENT2_WIN)
-                    print("Game String:", judge.game_str)
                     return
                 elif validation:
                     p1_boost = validation[1]  # Extract boost flag
                     p1_direction = validation[2]  # Extract direction
                     break
-            print(f"  Attempt {attempt} failed")
         
         # If both attempts failed, use random move or forfeit
         if not p1_move or not validation:
             if p1_random > 0:
-                print(f"Using random move for Player 1 ({p1_random} random moves left)")
                 random_agent = RandomPlayer(1)
                 p1_direction = random_agent.get_best_move()
                 p1_random -= 1
@@ -359,35 +345,28 @@ def main():
                 validation = judge.handle_move(dir_to_str[p1_direction], 1, is_random=True)
                 p1_boost = False  # Random moves don't use boost
             else:
-                print("Player 1 has no random moves left. Forfeiting.")
                 judge.end_game(GameResult.AGENT2_WIN)
-                print("Game String:", judge.game_str)
                 return
         else:
             # Direction already extracted from validation
             pass
         
         # Player 2 move
-        print("Requesting move from Player 2...")
         for attempt in range(1, 3):  # 2 attempts
             p2_move = judge.get_move(2, attempt, p2_random)
             if p2_move:
                 validation = judge.handle_move(p2_move, 2, is_random=False)
                 if validation == "forfeit":
-                    print("Player 2 forfeited")
                     judge.end_game(GameResult.AGENT1_WIN)
-                    print("Game String:", judge.game_str)
                     return
                 elif validation:
                     p2_boost = validation[1]  # Extract boost flag
                     p2_direction = validation[2]  # Extract direction
                     break
-            print(f"  Attempt {attempt} failed")
         
         # If both attempts failed, use random move or forfeit
         if not p2_move or not validation:
             if p2_random > 0:
-                print(f"Using random move for Player 2 ({p2_random} random moves left)")
                 random_agent = RandomPlayer(2)
                 p2_direction = random_agent.get_best_move()
                 p2_random -= 1
@@ -396,9 +375,7 @@ def main():
                 validation = judge.handle_move(dir_to_str[p2_direction], 2, is_random=True)
                 p2_boost = False  # Random moves don't use boost
             else:
-                print("Player 2 has no random moves left. Forfeiting.")
                 judge.end_game(GameResult.AGENT1_WIN)
-                print("Game String:", judge.game_str)
                 return
         else:
             # Direction already extracted from validation
@@ -410,68 +387,69 @@ def main():
         # Send updated state to both players
         judge.send_state(1)
         judge.send_state(2)
-        
-        # Display current board state
-        # print(judge.game.board)
-        print(f"Agent 1: Trail Length={judge.game.agent1.length}, Alive={judge.game.agent1.alive}, Boosts={judge.game.agent1.boosts_remaining}")
-        print(f"Agent 2: Trail Length={judge.game.agent2.length}, Alive={judge.game.agent2.alive}, Boosts={judge.game.agent2.boosts_remaining}")
-        
-        # Update visualizer state
-        with visualizer.state_lock:
-            visualizer.shared_state['agent1_trail'] = judge.game.agent1.get_trail_positions()
-            visualizer.shared_state['agent2_trail'] = judge.game.agent2.get_trail_positions()
-            visualizer.shared_state['turn'] = judge.game.turns
-            visualizer.shared_state['width'] = judge.game.board.width
-            visualizer.shared_state['height'] = judge.game.board.height
-            visualizer.shared_state['board'] = get_voronoi_board(
-                judge.game.board.grid,
-                judge.game.agent1.get_trail_positions(),
-                judge.game.agent2.get_trail_positions()
-            )
-
 
         # Check for game end
         if result is not None:
             judge.end_game(result)
-            print("Game String:", judge.game_str)
-            break
+            return result
         
         # Check for max turns (safety)
         if judge.game.turns >= 500:
-            print("Maximum turns reached")
             judge.end_game(GameResult.DRAW)
-            print("Game String:", judge.game_str)
-            break
+            return result
+
+agents = ["defense_king.py", "agents/v_agent.py", "agents/m_agent.py", "agents/random_agent.py"]
+test_agent = agents[2]
+opp_agent = agents[1]
+NUM_TESTS = 10
+
+def run_all_games():
+    wins = 0
+    total_games = NUM_TESTS * 2
+
+    with tqdm(total=total_games, desc="Running games") as pbar:
+        # As Agent 1
+        os.environ["PORT"] = "5008"
+        run_agent(test_agent)
+        time.sleep(0.5)
+        os.environ["PORT"] = "5009"
+        run_agent(opp_agent)
+        time.sleep(0.5)
+        for _ in range(NUM_TESTS):
+
+            result = main()
+            if result == GameResult.AGENT1_WIN:
+                wins += 1
+
+            pbar.update(1)
+        kill_agents()
+        
+        print(f"{test_agent} won {wins}/{NUM_TESTS} games ({wins/NUM_TESTS:.2%}) against {opp_agent}")
+        wins = 0
+        os.environ["PORT"] = "5008"
+        run_agent(opp_agent)
+        time.sleep(0.5)
+        os.environ["PORT"] = "5009"
+        run_agent(test_agent)
+        time.sleep(0.5)
+        # As Agent 2
+        for _ in range(NUM_TESTS):
+
+            result = main()
+            if result == GameResult.AGENT2_WIN:
+                wins += 1
+
+            pbar.update(1)
+        kill_agents()
+
+    print(f"{test_agent} won {wins}/{NUM_TESTS} games ({wins/NUM_TESTS:.2%}) against {opp_agent}")
 
 if __name__ == "__main__":
-    visualizer.start_visualizer_thread(host="0.0.0.0", port=5000)
-    print("Visualizer running at http://localhost:5000")
-
-    # Threads for agentsos.environ["PORT"] = "5008"
-    # run_agent("defense_king.py")
-    # run_agent("agents/v_agent.py")
-    run_agent("agents/m_agent.py")
-    time.sleep(0.5)  # let it start
-    os.environ["PORT"] = "5009"
-    run_agent("agents/v_agent.py")
-    # run_agent("agents/m_agent.py")
-    time.sleep(0.5)
-
-
     try:
-        main()
+        run_all_games()
     except KeyboardInterrupt:
         print("Quit Game")
     finally:
-        for p in agent_processes:
-            if p.poll() is None:  # still running
-                print(f"Terminating agent PID={p.pid}")
-                p.terminate()
-                try:
-                    p.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    print(f"Force killing agent PID={p.pid}")
-                    p.kill()
+        kill_agents()
         print("Exit")
-
-    sys.exit(0)
+        sys.exit(0)

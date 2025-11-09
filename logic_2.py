@@ -4,6 +4,7 @@ import random
 from collections import deque
 from case_closed_game import Game
 
+
 BOARD_HEIGHT = 18
 BOARD_WIDTH = 20
 MOVES = ["UP", "DOWN", "LEFT", "RIGHT"]
@@ -57,10 +58,12 @@ def apply_move(bit_map, pos, move):
     return new_map, (x, y), False
 
 # ----------------------
-# Heuristic (Voronoi + Mobility)
+# Adaptive Heuristic
 # ----------------------
-def heuristic(bit_map, our_pos, enemy_pos):
+def adaptive_heuristic(bit_map, our_pos, enemy_pos, our_boosts=0, enemy_boosts=0, turn_count=0):
     H, W = bit_map.shape
+    
+    # 1. Voronoi control (distance-based territory)
     dist_us = np.full((H, W), np.inf)
     dist_enemy = np.full((H, W), np.inf)
 
@@ -84,22 +87,63 @@ def heuristic(bit_map, our_pos, enemy_pos):
     free_mask = (bit_map == 0)
     us_win = np.sum((dist_us < dist_enemy) & free_mask)
     enemy_win = np.sum((dist_enemy < dist_us) & free_mask)
+    voronoi_score = us_win - enemy_win
 
-    mobility = len(generate_moves(bit_map, our_pos)) - len(generate_moves(bit_map, enemy_pos))
+    # 2. Mobility / reachable area
+    def reachable_area(pos):
+        visited = np.zeros_like(bit_map, dtype=bool)
+        queue = deque([pos])
+        visited[pos[1], pos[0]] = True
+        area = 1
+        while queue:
+            x, y = queue.popleft()
+            for dx, dy in DELTAS.values():
+                nx, ny = (x + dx) % W, (y + dy) % H
+                if bit_map[ny, nx] == 0 and not visited[ny, nx]:
+                    visited[ny, nx] = True
+                    queue.append((nx, ny))
+                    area += 1
+        return area
 
-    return int((us_win - enemy_win) * 2 + mobility)
+    our_area = reachable_area(our_pos)
+    enemy_area = reachable_area(enemy_pos)
+    mobility_score = our_area - enemy_area
+
+    # 3. Distance to opponent (Manhattan)
+    manhattan_dist = abs(our_pos[0] - enemy_pos[0]) + abs(our_pos[1] - enemy_pos[1])
+
+    # 4. Boost factor
+    boost_factor = 0.5 * (our_boosts - enemy_boosts)
+
+    # 5. Adaptive weighting
+    if turn_count < 30:  # early game favors area control
+        weight_voronoi = 2.5
+        weight_mobility = 1.0
+        weight_distance = 0.5
+    else:  # late game favors mobility and spacing
+        weight_voronoi = 1.0
+        weight_mobility = 2.0
+        weight_distance = 1.0
+
+    score = (weight_voronoi * voronoi_score +
+             weight_mobility * mobility_score +
+             weight_distance * manhattan_dist +
+             boost_factor)
+
+    return score
+
 
 # ----------------------
-# Alpha-Beta Minimax with Random Tie-Breaking
+# Modified Alphabeta
 # ----------------------
 def alphabeta(bit_map, our_pos, enemy_pos, our_boosts, enemy_boosts,
               depth, alpha=-float('inf'), beta=float('inf'),
-              maximizing=True, start_time=None, time_limit=3.8):
+              maximizing=True, start_time=None, time_limit=3.8, turn_count=0):
     if start_time and time.time() - start_time > time_limit:
         raise TimeoutError()
 
     if depth == 0:
-        return heuristic(bit_map, our_pos, enemy_pos), None
+        return adaptive_heuristic(bit_map, our_pos, enemy_pos, our_boosts, enemy_boosts, turn_count), None
 
     pos = our_pos if maximizing else enemy_pos
     boosts = our_boosts if maximizing else enemy_boosts
@@ -108,11 +152,14 @@ def alphabeta(bit_map, our_pos, enemy_pos, our_boosts, enemy_boosts,
     if not moves:
         return (-99999 if maximizing else 99999), None
 
-    # Move ordering by heuristic
+    # Move ordering using heuristic
     def move_score(mv):
         nm, np_pos, dead = apply_move(bit_map, pos, mv)
-        return -heuristic(bit_map, np_pos if maximizing else our_pos,
-                          enemy_pos if maximizing else np_pos)
+        if dead:
+            return -9999
+        return -adaptive_heuristic(nm, np_pos if maximizing else our_pos,
+                                   enemy_pos if maximizing else np_pos,
+                                   our_boosts, enemy_boosts, turn_count)
 
     moves.sort(key=move_score, reverse=maximizing)
 
@@ -134,7 +181,8 @@ def alphabeta(bit_map, our_pos, enemy_pos, our_boosts, enemy_boosts,
                 depth-1,
                 alpha, beta,
                 not maximizing,
-                start_time, time_limit
+                start_time, time_limit,
+                turn_count+1
             )
 
         if maximizing:
@@ -156,16 +204,16 @@ def alphabeta(bit_map, our_pos, enemy_pos, our_boosts, enemy_boosts,
             if beta <= alpha:
                 break
 
+    # Randomly pick among tied best moves
     best_move = random.choice(best_moves) if best_moves else None
     return (best_value, best_move)
-
 
 # ----------------------
 # Choose Next Move
 # ----------------------
 def choose_next_move(game: Game, player_number=1, max_depth=4, time_limit=3.8):
-    our_agent = game.agent1 if player_number==1 else game.agent2
-    enemy_agent = game.agent2 if player_number==1 else game.agent1
+    our_agent = game.agent1 if player_number == 1 else game.agent2
+    enemy_agent = game.agent2 if player_number == 1 else game.agent1
     bit_map = game_to_bit_map(game)
     our_pos = tuple(our_agent.trail[-1])
     enemy_pos = tuple(enemy_agent.trail[-1])
@@ -177,7 +225,8 @@ def choose_next_move(game: Game, player_number=1, max_depth=4, time_limit=3.8):
     try:
         _, best_move = alphabeta(bit_map, our_pos, enemy_pos,
                                  our_boosts, enemy_boosts,
-                                 max_depth, start_time=start_time, time_limit=time_limit)
+                                 max_depth, start_time=start_time, time_limit=time_limit,
+                                 turn_count=game.turns)
     except TimeoutError:
         pass
 

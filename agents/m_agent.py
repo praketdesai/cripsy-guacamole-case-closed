@@ -12,7 +12,7 @@ parent_dir = Path(__file__).resolve().parent.parent
 sys.path.append(str(parent_dir))
 
 from case_closed_game import Game
-import logic
+import logic_2
 
 # ------------------------------
 # Flask server setup
@@ -25,8 +25,8 @@ GLOBAL_GAME = Game()
 LAST_POSTED_STATE = {}
 game_lock = Lock()
 
-PARTICIPANT = "BigBrother"
-AGENT_NAME = "BigBrother"
+PARTICIPANT = "Maharaga"
+AGENT_NAME = "Maharaga"
 
 
 @app.route("/", methods=["GET"])
@@ -101,7 +101,7 @@ def send_move():
     player_number = request.args.get("player_number", default=1, type=int)
 
     with game_lock:
-        move = logic.choose_next_move(GLOBAL_GAME, player_number)
+        move = logic_2.choose_next_move(GLOBAL_GAME, player_number)
 
     return jsonify({"move": move}), 200
 
