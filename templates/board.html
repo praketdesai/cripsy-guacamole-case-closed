@@ -1,106 +1,57 @@
-<!doctype html>
+<!DOCTYPE html>
 <html>
 <head>
-  <meta charset="utf-8">
-  <title>Case Closed - Visualizer</title>
-  <style>
-    body { font-family: sans-serif; margin: 10px; }
-    canvas { background: #ffffff; border:1px solid #ddd; }
-    #info { margin-top: 8px; }
-  </style>
+<style>
+    body { background: #222; color: #eee; font-family: sans-serif; margin:0; padding:20px; }
+    #grid {
+        display: grid;
+        gap: 2px; /* spacing between all cells, including repeated grids */
+        margin: 20px auto;
+    }
+    .cell { width: 5px; height: 5px; background: #444; }
+    .t1 { background: rgba(120, 10, 120, 0.8); }
+    .t2 { background: red; }
+    .t3 { background: blue; }
+</style>
 </head>
 <body>
-  <h3>Case Closed - Visual Visualizer</h3>
-  <canvas id="board" width="600" height="600"></canvas>
-  <div id="info">Turn: <span id="turn">0</span></div>
+
+<h3>Visualizer x4</h3>
+<div id="grid"></div>
 
 <script>
-const canvas = document.getElementById('board');
-const ctx = canvas.getContext('2d');
+function updateGrid() {
+    fetch("/state")
+        .then(r => r.json())
+        .then(data => {
+            const grid = document.getElementById("grid");
+            const width = data.width;
+            const height = data.height;
+            
+            // Total grid is doubled in both dimensions
+            grid.style.gridTemplateColumns = `repeat(${width*2}, 5px)`;
+            grid.innerHTML = "";
 
-let gridW = 20;
-let gridH = 20;
-
-function draw(state) {
-  gridW = state.width;
-  gridH = state.height;
-  const cellW = canvas.width / gridW;
-  const cellH = canvas.height / gridH;
-
-  // clear canvas
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-  // draw Voronoi cells first
-  if (state.board) {
-    for (let y = 0; y < gridH; y++) {
-      for (let x = 0; x < gridW; x++) {
-        const cellVal = state.board[y][x];
-        if (cellVal === 3) {  // agent1 Voronoi
-          ctx.fillStyle = 'rgba(255,180,180,0.3)';
-          ctx.fillRect(x*cellW, y*cellH, cellW, cellH);
-        } else if (cellVal === 4) { // agent2 Voronoi
-          ctx.fillStyle = 'rgba(150,180,255,0.3)';
-          ctx.fillRect(x*cellW, y*cellH, cellW, cellH);
-        }
-      }
-    }
-  }
-
-  // optional grid lines
-  ctx.strokeStyle = '#eee';
-  for (let x=0; x<=gridW; x++) {
-    ctx.beginPath();
-    ctx.moveTo(x * cellW, 0);
-    ctx.lineTo(x * cellW, canvas.height);
-    ctx.stroke();
-  }
-  for (let y=0; y<=gridH; y++) {
-    ctx.beginPath();
-    ctx.moveTo(0, y * cellH);
-    ctx.lineTo(canvas.width, y * cellH);
-    ctx.stroke();
-  }
-
-  // draw trails (agent1 red, agent2 blue)
-  // draw trails (agent1 dark gray, agent2 black)
-  ctx.globalAlpha = 0.9;
-  (state.agent1_trail || []).forEach((pos,i) => {
-    const x = pos[0], y = pos[1];
-    ctx.fillStyle = 'rgba(10,10,10,80)';
-    ctx.fillRect(x*cellW+1, y*cellH+1, cellW-2, cellH-2);
-  });
-  (state.agent2_trail || []).forEach((pos,i) => {
-    const x = pos[0], y = pos[1];
-    ctx.fillStyle = 'rgba(10,10,10,80)';
-    ctx.fillRect(x*cellW+1, y*cellH+1, cellW-2, cellH-2);
-  });
-
-
-  // draw heads on top
-  const a1 = state.agent1_trail && state.agent1_trail.length ? state.agent1_trail[state.agent1_trail.length - 1] : null;
-  const a2 = state.agent2_trail && state.agent2_trail.length ? state.agent2_trail[state.agent2_trail.length - 1] : null;
-
-  if (a1) { ctx.fillStyle = 'red'; ctx.fillRect(a1[0]*cellW+1, a1[1]*cellH+1, cellW-2, cellH-2); }
-  if (a2) { ctx.fillStyle = 'blue'; ctx.fillRect(a2[0]*cellW+1, a2[1]*cellH+1, cellW-2, cellH-2); }
-
-  document.getElementById('turn').innerText = state.turn;
-  ctx.globalAlpha = 1.0;
+            for (let row_repeat = 0; row_repeat < 2; row_repeat++) {
+                for (let y = 0; y < height; y++) {
+                    for (let col_repeat = 0; col_repeat < 2; col_repeat++) {
+                        for (let x = 0; x < width; x++) {
+                            const cellVal = data.board[y][x];
+                            const div = document.createElement("div");
+                            div.classList.add("cell");
+                            if (cellVal === 1) div.classList.add("t1");
+                            if (cellVal === 2) div.classList.add("t2");
+                            if (cellVal === 3) div.classList.add("t3");
+                            grid.appendChild(div);
+                        }
+                    }
+                }
+            }
+        });
 }
 
-async function fetchAndDraw() {
-  try {
-    const res = await fetch('/state');
-    if (!res.ok) return;
-    const state = await res.json();
-    draw(state);
-  } catch (e) {
-    // ignore transient errors
-  }
-}
-
-// poll every 250 ms
-setInterval(fetchAndDraw, 250);
-fetchAndDraw();
+setInterval(updateGrid, 100);
 </script>
+
 </body>
 </html>

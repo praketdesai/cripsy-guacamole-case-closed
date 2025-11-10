@@ -1,32 +1,21 @@
 import os
-import socket
+import uuid
 from flask import Flask, request, jsonify
 from threading import Lock
 from collections import deque
-import logging
-import sys
-from pathlib import Path
 
-# Add parent directory to path to import game modules
-parent_dir = Path(__file__).resolve().parent.parent
-sys.path.append(str(parent_dir))
+from case_closed_game import Game, Direction, GameResult
 
-from case_closed_game import Game
-import logic_ssbtt
-
-# ------------------------------
-# Flask server setup
-# ------------------------------
+# Flask API server setup
 app = Flask(__name__)
-log = logging.getLogger('werkzeug')
-log.setLevel(logging.ERROR)  # suppress request logging
 
 GLOBAL_GAME = Game()
 LAST_POSTED_STATE = {}
-game_lock = Lock()
 
-PARTICIPANT = "R"
-AGENT_NAME = "R"
+game_lock = Lock()
+ 
+PARTICIPANT = "ParticipantX"
+AGENT_NAME = "AgentX"
 
 
 @app.route("/", methods=["GET"])
@@ -74,6 +63,7 @@ def _update_local_game_from_post(data: dict):
         if "turn_count" in data:
             GLOBAL_GAME.turns = int(data["turn_count"])
 
+
 @app.route("/send-state", methods=["POST"])
 def receive_state():
     """Judge calls this to push the current game state to the agent server.
@@ -101,7 +91,20 @@ def send_move():
     player_number = request.args.get("player_number", default=1, type=int)
 
     with game_lock:
-        move = logic_ssbtt.choose_next_move(GLOBAL_GAME, player_number)
+        state = dict(LAST_POSTED_STATE)   
+        my_agent = GLOBAL_GAME.agent1 if player_number == 1 else GLOBAL_GAME.agent2
+        boosts_remaining = my_agent.boosts_remaining
+   
+    # -----------------your code here-------------------
+    # Simple example: always go RIGHT (replace this with your logic)
+    # To use a boost: move = "RIGHT:BOOST"
+    move = "RIGHT"
+    
+    # Example: Use boost if available and it's late in the game
+    # turn_count = state.get("turn_count", 0)
+    # if boosts_remaining > 0 and turn_count > 50:
+    #     move = "RIGHT:BOOST"
+    # -----------------end code here--------------------
 
     return jsonify({"move": move}), 200
 
@@ -119,6 +122,5 @@ def end_game():
 
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", "5008"))  # default to 5008
-    print(f"Starting agent on port {port}...")  # optional debug
-    app.run(host="0.0.0.0", port=port, debug=False)
+    port = int(os.environ.get("PORT", "5008"))
+    app.run(host="0.0.0.0", port=port, debug=True)

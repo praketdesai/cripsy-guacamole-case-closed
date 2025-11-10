@@ -2,15 +2,18 @@ import os
 import uuid
 import random
 import socket
-from flask import Flask, request, jsonify
+import numpy
 from threading import Lock
 from collections import deque
+from flask import Flask, request, jsonify
 
 import sys
 from pathlib import Path
 parent_dir = Path(__file__).resolve().parent.parent
 sys.path.append(str(parent_dir))
 
+import heuristic
+import util
 from case_closed_game import Game, Direction, GameResult
 
 # Flask API server setup
@@ -104,39 +107,11 @@ def send_move():
 
     with game_lock:
         my_agent = GLOBAL_GAME.agent1 if player_number == 1 else GLOBAL_GAME.agent2
-        board = GLOBAL_GAME.board.grid
+        enemy_agent = GLOBAL_GAME.agent2 if player_number == 1 else GLOBAL_GAME.agent1
         boosts_remaining = my_agent.boosts_remaining
 
-    # Current position
-    head_x, head_y = my_agent.trail[-1]
-    width, height = len(board[0]), len(board)
-
-    # Potential moves
-    directions = {
-        "UP": (0, -1),
-        "DOWN": (0, 1),
-        "LEFT": (-1, 0),
-        "RIGHT": (1, 0)
-    }
-
-    safe_moves = []
-
-    for move, (dx, dy) in directions.items():
-        new_x = (head_x + dx) % width
-        new_y = (head_y + dy) % height
-        if (new_x, new_y) not in my_agent.trail:
-            safe_moves.append(move)
-
-    if not safe_moves:
-        # No safe moves, pick a how to die
-        move = random.choice(list(directions.keys()))
-    else:
-        move = random.choice(safe_moves)
-
-    # Use boost
-    if boosts_remaining > 0 and random.random() > 0.9:
-        move += ":BOOST"
-    # -----------------end code here--------------------
+    bit_map = util.game_to_bit_map(GLOBAL_GAME)
+    move = heuristic.random_heuristic(bit_map, my_agent.trail[-1], enemy_agent.trail[-1], boosts_remaining)
 
     return jsonify({"move": move}), 200
 
